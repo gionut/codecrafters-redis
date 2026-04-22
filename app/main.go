@@ -5,6 +5,7 @@ import (
 	"net"
 	"os"
 	"bufio"
+	"strings"
 )
 
 var _ = net.Listen
@@ -15,15 +16,25 @@ func HandleConnection(conn net.Conn) {
 	reader := bufio.NewReader(conn)
 
 	for {
-		_, err := reader.ReadString('\n')
-		if err != nil {
-			return
+		line, err := reader.ReadString('\n')
+        if err != nil {
+            return 
+        }
+
+        if strings.HasPrefix(line, "*") {
+            _, err = reader.ReadString('\n') // Consume lenght
+			if err != nil {
+				fmt.Println("Invalid request. Missing length")
+				continue
+			}
+            _, err = reader.ReadString('\n') // Consume payload
+			if err != nil {
+				fmt.Println("Invalid request. Missing payload")
+				continue
+			}
 		}
-		
-		_, err = conn.Write([]byte("+PONG\r\n"))
-		if err != nil {
-			return
-		}
+
+		conn.Write([]byte("+PONG\r\n"))
 	}
 }
 

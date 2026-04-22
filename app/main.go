@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"bufio"
 )
 
 var _ = net.Listen
@@ -11,14 +12,19 @@ var _ = os.Exit
 
 func HandleConnection(conn net.Conn) {
 	defer conn.Close()
-	buf := make([]byte, 1024)
-	_, err := conn.Read(buf)
-	if err != nil {
-		return
-	}
+	reader := bufio.NewReader(conn)
 
-	pong := "+PONG\r\n"
-	conn.Write([]byte(pong))
+	for {
+		_, err := reader.ReadString('\n')
+		if err != nil {
+			return
+		}
+		
+		_, err = conn.Write([]byte("+PONG\r\n"))
+		if err != nil {
+			return
+		}
+	}
 }
 
 func main() {

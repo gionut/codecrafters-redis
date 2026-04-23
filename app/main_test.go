@@ -112,6 +112,6 @@ func TestHandleEcho(t *testing.T) {
 	}
 	buffer, totalRead := readWithDeadline(t, conn, 10)
 
-    expected := "+hey\r\n"
+    expected := "$3\r\nhey\r\n"
     assert.Equal(t, expected, string(buffer[:totalRead]), "Received data should match expected count")
 }

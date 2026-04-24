@@ -7,14 +7,23 @@ import (
 	"bufio"
 	"strings"
 	"strconv"
+	"time"
 )
 
 var _ = net.Listen
 var _ = os.Exit
 
+type Entry struct {
+    Value  string
+    Expiry time.Time // zero value means no expiry
+}
+
+func (e Entry) IsExpired() bool {
+    return !e.Expiry.IsZero() && time.Now().After(e.Expiry)
+}
 
 // handleCommand dispatches a parsed command and writes the response to conn.
-func handleCommand(conn net.Conn, cmd string, args []string, store map[string]string) {
+func handleCommand(conn net.Conn, cmd string, args []string, store map[string]Entry) {
 	switch cmd {
 		case "PING":
 			conn.Write([]byte("+PONG\r\n"))
@@ -25,12 +34,22 @@ func handleCommand(conn net.Conn, cmd string, args []string, store map[string]st
 			}
 			conn.Write([]byte(bulkString(args[0])))
 		case "SET":
-			if len(args) != 2 {
+			if len(args) < 2 {
 				conn.Write([]byte("-ERR wrong number of arguments for 'set' command\r\n"))
 				return
 			}
+			
 			key, val := args[0], args[1]
-			store[key] = val
+			entry := Entry{Value: val}
+			if len(args) == 4 && args[2] == "PX" {
+				ms, err := strconv.Atoi(args[3])
+				if err != nil {
+					conn.Write([]byte("-ERR invalid expire time in 'set' command\r\n"))
+					return
+				}
+				entry.Expiry = time.Now().Add(time.Duration(ms) * time.Millisecond)
+			}
+			store[key] = entry
 			conn.Write([]byte("+OK\r\n"))
 		case "GET":
 			if len(args) != 1 {
@@ -38,12 +57,16 @@ func handleCommand(conn net.Conn, cmd string, args []string, store map[string]st
 				return
 			}
 			key := args[0]
-			val, exists := store[key]
-			if exists {
-				conn.Write([]byte(bulkString(val)))
-			} else {
-				conn.Write([]byte(bulkStringNull()))
-			}
+			entry, exists := store[key]
+			if exists && !entry.IsExpired() {
+        		conn.Write([]byte(bulkString(entry.Value)))
+    		} else {
+        		if exists {
+            		delete(store, key) // lazy expiry cleanup
+        		}
+        		conn.Write([]byte(bulkStringNull()))
+    		}
+			
 		default:
 			conn.Write([]byte("-ERR unknown command '" + cmd + "'\r\n"))
 	}
@@ -52,7 +75,7 @@ func handleCommand(conn net.Conn, cmd string, args []string, store map[string]st
 func HandleConnection(conn net.Conn) {
 	defer conn.Close()
 	reader := bufio.NewReader(conn)
-	store := make(map[string]string)
+	store := make(map[string]Entry)
 	for {
 		line, err := reader.ReadString('\n')
 		if err != nil {

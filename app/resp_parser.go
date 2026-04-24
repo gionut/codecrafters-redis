@@ -11,6 +11,10 @@ func bulkString(value string) string {
     return fmt.Sprintf("$%d\r\n%s\r\n", len(value), value)
 }
 
+func bulkStringNull() string {
+    return "$-1\r\n"
+}
+
 // parseRESP reads a single RESP value (length line + payload line) from the reader.
 func parseRESP(reader *bufio.Reader) (string, error) {
 	_, err := reader.ReadString('\n') // consume length line

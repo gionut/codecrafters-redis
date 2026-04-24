@@ -14,7 +14,7 @@ var _ = os.Exit
 
 
 // handleCommand dispatches a parsed command and writes the response to conn.
-func handleCommand(conn net.Conn, cmd string, args []string) {
+func handleCommand(conn net.Conn, cmd string, args []string, store map[string]string) {
 	switch cmd {
 		case "PING":
 			conn.Write([]byte("+PONG\r\n"))
@@ -24,6 +24,26 @@ func handleCommand(conn net.Conn, cmd string, args []string) {
 				return
 			}
 			conn.Write([]byte(bulkString(args[0])))
+		case "SET":
+			if len(args) != 2 {
+				conn.Write([]byte("-ERR wrong number of arguments for 'set' command\r\n"))
+				return
+			}
+			key, val := args[0], args[1]
+			store[key] = val
+			conn.Write([]byte("+OK\r\n"))
+		case "GET":
+			if len(args) != 1 {
+				conn.Write([]byte("-ERR wrong number of arguments for 'get' command\r\n"))
+				return
+			}
+			key := args[0]
+			val, exists := store[key]
+			if exists {
+				conn.Write([]byte(bulkString(val)))
+			} else {
+				conn.Write([]byte(bulkStringNull()))
+			}
 		default:
 			conn.Write([]byte("-ERR unknown command '" + cmd + "'\r\n"))
 	}
@@ -32,7 +52,7 @@ func handleCommand(conn net.Conn, cmd string, args []string) {
 func HandleConnection(conn net.Conn) {
 	defer conn.Close()
 	reader := bufio.NewReader(conn)
-
+	store := make(map[string]string)
 	for {
 		line, err := reader.ReadString('\n')
 		if err != nil {
@@ -57,7 +77,7 @@ func HandleConnection(conn net.Conn) {
 			return // connection is likely corrupted, bail out
 		}
 
-		handleCommand(conn, cmd, args)
+		handleCommand(conn, cmd, args, store)
 	}
 }
 

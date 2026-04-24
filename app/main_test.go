@@ -115,3 +115,53 @@ func TestHandleEcho(t *testing.T) {
     expected := "$3\r\nhey\r\n"
     assert.Equal(t, expected, string(buffer[:totalRead]), "Received data should match expected count")
 }
+
+func TestHandleSet(t *testing.T) {
+	conn, cleanup := setupTestConnection(t)
+	defer cleanup()
+	
+	_, err := conn.Write([]byte("*3\r\n$3\r\nSET\r\n$3\r\nfoo\r\n$3\r\nbar\r\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	buffer, totalRead := readWithDeadline(t, conn, 10)
+
+    expected := "+OK\r\n"
+    assert.Equal(t, expected, string(buffer[:totalRead]), "Received data should match expected count")
+}
+
+func TestHandleGetSet(t *testing.T) {
+	conn, cleanup := setupTestConnection(t)
+	defer cleanup()
+	
+	_, err := conn.Write([]byte("*3\r\n$3\r\nSET\r\n$3\r\nfoo\r\n$3\r\nbar\r\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	buffer, totalRead := readWithDeadline(t, conn, 10)
+
+    expected := "+OK\r\n"
+    assert.Equal(t, expected, string(buffer[:totalRead]), "Received data should match expected count")
+
+	_, err = conn.Write([]byte("*2\r\n$3\r\nGET\r\n$3\r\nfoo\r\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	buffer, totalRead = readWithDeadline(t, conn, 10)
+	expected = "$3\r\nbar\r\n"
+    assert.Equal(t, expected, string(buffer[:totalRead]), "Received data should match expected count")
+}
+
+func TestHandleGetNull(t *testing.T) {
+	conn, cleanup := setupTestConnection(t)
+	defer cleanup()
+	
+	_, err := conn.Write([]byte("*2\r\n$3\r\nGET\r\n$3\r\nfoo\r\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	buffer, totalRead := readWithDeadline(t, conn, 10)
+
+    expected := "$-1\r\n"
+    assert.Equal(t, expected, string(buffer[:totalRead]), "Received data should match expected count")
+}

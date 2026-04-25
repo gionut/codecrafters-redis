@@ -6,6 +6,14 @@ import (
 	"strings"
 )
 
+// Return a RESP integer value ":[+|-]<value>\r\n"
+func respInteger(value int) string {
+    if value < 0 {
+		return fmt.Sprintf(":-%d\r\n", value)
+	} 
+	return fmt.Sprintf(":%d\r\n", value)
+}
+
 // Return a bulk string from value "$<length>\r\n<value>\r\n"
 func bulkString(value string) string {
     return fmt.Sprintf("$%d\r\n%s\r\n", len(value), value)

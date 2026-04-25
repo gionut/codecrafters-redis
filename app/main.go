@@ -23,7 +23,7 @@ func (e Entry) IsExpired() bool {
 }
 
 // handleCommand dispatches a parsed command and writes the response to conn.
-func handleCommand(conn net.Conn, cmd string, args []string, store map[string]Entry) {
+func handleCommand(conn net.Conn, cmd string, args []string, store map[string]Entry, list_store map[string][]string) {
 	switch cmd {
 		case "PING":
 			conn.Write([]byte("+PONG\r\n"))
@@ -66,7 +66,17 @@ func handleCommand(conn net.Conn, cmd string, args []string, store map[string]En
         		}
         		conn.Write([]byte(bulkStringNull()))
     		}
+		case "RPUSH":
+			if len(args) < 2 {
+				conn.Write([]byte("-ERR wrong number of arguments for 'rpush' command\r\n"))
+				return
+			}
+			key := args[0]
+			elements := args[1:]
 			
+			list_store[key] = append(list_store[key], elements...)
+			
+			conn.Write([]byte(respInteger(len(list_store[key]))))
 		default:
 			conn.Write([]byte("-ERR unknown command '" + cmd + "'\r\n"))
 	}
@@ -76,6 +86,7 @@ func HandleConnection(conn net.Conn) {
 	defer conn.Close()
 	reader := bufio.NewReader(conn)
 	store := make(map[string]Entry)
+	list_store := make(map[string][]string)
 	for {
 		line, err := reader.ReadString('\n')
 		if err != nil {
@@ -100,7 +111,7 @@ func HandleConnection(conn net.Conn) {
 			return // connection is likely corrupted, bail out
 		}
 
-		handleCommand(conn, cmd, args, store)
+		handleCommand(conn, cmd, args, store, list_store)
 	}
 }
 

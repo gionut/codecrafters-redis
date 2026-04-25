@@ -196,3 +196,26 @@ func TestHandleGetSetExpiry(t *testing.T) {
 	expected = bulkStringNull()
     assert.Equal(t, expected, string(buffer[:totalRead]), "Received data should match expected count")
 }
+
+func TestHandleListCreation(t *testing.T) {
+	conn, cleanup := setupTestConnection(t)
+	defer cleanup()
+	
+	_, err := conn.Write([]byte("*3\r\n$4\r\nRPUSH\r\n$5\r\nlist\r\n$3\r\nfoo\r\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	buffer, totalRead := readWithDeadline(t, conn, 10)
+
+    expected := respInteger(1)
+    assert.Equal(t, expected, string(buffer[:totalRead]), "Received data should match expected count")
+
+	_, err = conn.Write([]byte("*3\r\n$4\r\nRPUSH\r\n$5\r\nlist\r\n$3\r\nboo\r\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	buffer, totalRead = readWithDeadline(t, conn, 10)
+
+    expected = respInteger(2)
+    assert.Equal(t, expected, string(buffer[:totalRead]), "Received data should match expected count")
+}

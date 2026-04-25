@@ -77,6 +77,8 @@ func handleCommand(conn net.Conn, cmd string, args []string, store map[string]En
 			list_store[key] = append(list_store[key], elements...)
 			
 			conn.Write([]byte(respInteger(len(list_store[key]))))
+		case "LRANGE":
+			fmt.Println("not implemented")
 		default:
 			conn.Write([]byte("-ERR unknown command '" + cmd + "'\r\n"))
 	}

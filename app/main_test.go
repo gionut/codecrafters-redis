@@ -210,12 +210,76 @@ func TestHandleListCreation(t *testing.T) {
     expected := respInteger(1)
     assert.Equal(t, expected, string(buffer[:totalRead]), "Received data should match expected count")
 
-	_, err = conn.Write([]byte("*3\r\n$4\r\nRPUSH\r\n$5\r\nlist\r\n$3\r\nboo\r\n"))
+	_, err = conn.Write([]byte("*5\r\n$4\r\nRPUSH\r\n$5\r\nlist\r\n$3\r\nboo\r\n$3\r\ncoo\r\n$6\r\ndoodoo\r\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	buffer, totalRead = readWithDeadline(t, conn, 10)
+
+    expected = respInteger(4)
+    assert.Equal(t, expected, string(buffer[:totalRead]), "Received data should match expected count")
+}
+
+func TestHandleListRange(t *testing.T) {
+	conn, cleanup := setupTestConnection(t)
+	defer cleanup()
+	
+	// List does not exist, expect empty array
+	_, err := conn.Write([]byte("*4\r\n$4\r\nLRANGE\r\n$5\r\nlist\r\n$1\r\n0\r\n$1\r\n1\r\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	buffer, totalRead := readWithDeadline(t, conn, 10)
+
+    expected := respArray([]string{})
+    assert.Equal(t, expected, string(buffer[:totalRead]), "Received data should match expected count")
+
+	// List exists good indices
+	_, err = conn.Write([]byte("*4\r\n$4\r\nRPUSH\r\n$5\r\nlist\r\n$1\r\na\r\n$1\r\nb\r\n"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	buffer, totalRead = readWithDeadline(t, conn, 10)
 
     expected = respInteger(2)
+    assert.Equal(t, expected, string(buffer[:totalRead]), "Received data should match expected count")
+
+	_, err = conn.Write([]byte("*4\r\n$4\r\nLRANGE\r\n$5\r\nlist\r\n$1\r\n0\r\n$1\r\n1\r\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	buffer, totalRead = readWithDeadline(t, conn, 10)
+
+	expected = respArray([]string{"a", "b"})
+    assert.Equal(t, expected, string(buffer[:totalRead]), "Received data should match expected count")
+
+	// List exists stop index exceeding length
+	_, err = conn.Write([]byte("*4\r\n$4\r\nLRANGE\r\n$5\r\nlist\r\n$1\r\n0\r\n$3\r\n100\r\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	buffer, totalRead = readWithDeadline(t, conn, 10)
+	
+	expected = respArray([]string{"a", "b"})
+    assert.Equal(t, expected, string(buffer[:totalRead]), "Received data should match expected count")
+
+	// Start index exceeding length
+	_, err = conn.Write([]byte("*4\r\n$4\r\nLRANGE\r\n$5\r\nlist\r\n$1\r\n2\r\n$3\r\n100\r\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	buffer, totalRead = readWithDeadline(t, conn, 10)
+	
+	expected = respArray([]string{})
+    assert.Equal(t, expected, string(buffer[:totalRead]), "Received data should match expected count")
+
+	// Start index greater than stop index 
+	_, err = conn.Write([]byte("*4\r\n$4\r\nLRANGE\r\n$5\r\nlist\r\n$1\r\n2\r\n$1\r\n1\r\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	buffer, totalRead = readWithDeadline(t, conn, 10)
+	
+	expected = respArray([]string{})
     assert.Equal(t, expected, string(buffer[:totalRead]), "Received data should match expected count")
 }

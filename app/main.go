@@ -78,7 +78,43 @@ func handleCommand(conn net.Conn, cmd string, args []string, store map[string]En
 			
 			conn.Write([]byte(respInteger(len(list_store[key]))))
 		case "LRANGE":
-			fmt.Println("not implemented")
+			if len(args) != 3 {
+				conn.Write([]byte("-ERR wrong number of arguments for 'lrange' command\r\n"))
+				return
+			}
+			key := args[0]
+			start, err := strconv.Atoi(args[1])
+			if err != nil {
+				conn.Write([]byte("-ERR wrong value type for 'lrange <start>' argument\r\n"))
+				return
+			}
+			stop, err := strconv.Atoi(args[2])
+			if err != nil {
+				conn.Write([]byte("-ERR wrong value type for 'lrange <stop>' argument\r\n"))
+				return
+			}
+
+			list, exists := list_store[key]
+			if !exists {
+				conn.Write([]byte(respArray([]string{})))
+				return
+			}
+
+			n := len(list)
+			if start < 0 {
+				start = max(start+n, 0)
+			}
+			if stop < 0 {
+				stop = stop + n
+			}
+
+			if start > stop || start >= n {
+				conn.Write([]byte(respArray([]string{})))
+				return
+			}
+
+			stop = min(stop+1, n)
+			conn.Write([]byte(respArray(list[start:stop])))
 		default:
 			conn.Write([]byte("-ERR unknown command '" + cmd + "'\r\n"))
 	}

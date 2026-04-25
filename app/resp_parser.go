@@ -6,6 +6,16 @@ import (
 	"strings"
 )
 
+// Return a RESP array value "*<number-of-elements>\r\n<element-1>...<element-n>"
+func respArray(array []string) string {
+    var sb strings.Builder
+    fmt.Fprintf(&sb, "*%d\r\n", len(array))
+    for _, el := range array {
+        fmt.Fprintf(&sb, "$%d\r\n%s\r\n", len(el), el)
+    }
+    return sb.String()
+}
+
 // Return a RESP integer value ":[+|-]<value>\r\n"
 func respInteger(value int) string {
     if value < 0 {

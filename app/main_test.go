@@ -197,7 +197,7 @@ func TestHandleGetSetExpiry(t *testing.T) {
     assert.Equal(t, expected, string(buffer[:totalRead]), "Received data should match expected count")
 }
 
-func TestHandleListCreation(t *testing.T) {
+func TestHandleRpushListCreation(t *testing.T) {
 	conn, cleanup := setupTestConnection(t)
 	defer cleanup()
 	
@@ -209,14 +209,83 @@ func TestHandleListCreation(t *testing.T) {
 
     expected := respInteger(1)
     assert.Equal(t, expected, string(buffer[:totalRead]), "Received data should match expected count")
+}
 
-	_, err = conn.Write([]byte("*5\r\n$4\r\nRPUSH\r\n$5\r\nlist\r\n$3\r\nboo\r\n$3\r\ncoo\r\n$6\r\ndoodoo\r\n"))
+func TestHandleLpushListCreation(t *testing.T) {
+	conn, cleanup := setupTestConnection(t)
+	defer cleanup()
+	
+	_, err := conn.Write([]byte("*3\r\n$4\r\nLPUSH\r\n$5\r\nlist\r\n$3\r\nfoo\r\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	buffer, totalRead := readWithDeadline(t, conn, 10)
+
+    expected := respInteger(1)
+    assert.Equal(t, expected, string(buffer[:totalRead]), "Received data should match expected count")
+}
+
+func TestHandleRpushListAppend(t *testing.T) {
+	conn, cleanup := setupTestConnection(t)
+	defer cleanup()
+	
+	_, err := conn.Write([]byte("*3\r\n$4\r\nRPUSH\r\n$5\r\nlist\r\n$1\r\na\r\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	buffer, totalRead := readWithDeadline(t, conn, 10)
+
+    expected := respInteger(1)
+    assert.Equal(t, expected, string(buffer[:totalRead]), "Received data should match expected count")
+
+	_, err = conn.Write([]byte("*5\r\n$4\r\nRPUSH\r\n$5\r\nlist\r\n$1\r\nb\r\n$1\r\nc\r\n$1\r\nd\r\n"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	buffer, totalRead = readWithDeadline(t, conn, 10)
 
     expected = respInteger(4)
+    assert.Equal(t, expected, string(buffer[:totalRead]), "Received data should match expected count")
+
+	_, err = conn.Write([]byte("*4\r\n$4\r\nLRANGE\r\n$5\r\nlist\r\n$1\r\n0\r\n$1\r\n3\r\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	buffer, totalRead = readWithDeadline(t, conn, 10)
+
+	expected = respArray([]string{"a", "b", "c", "d"})
+    assert.Equal(t, expected, string(buffer[:totalRead]), "Received data should match expected count")
+}
+
+func TestHandleLpushListAppend(t *testing.T) {
+	conn, cleanup := setupTestConnection(t)
+	defer cleanup()
+	
+	_, err := conn.Write([]byte("*3\r\n$4\r\nLPUSH\r\n$5\r\nlist\r\n$1\r\na\r\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	buffer, totalRead := readWithDeadline(t, conn, 10)
+
+    expected := respInteger(1)
+    assert.Equal(t, expected, string(buffer[:totalRead]), "Received data should match expected count")
+
+	_, err = conn.Write([]byte("*5\r\n$4\r\nLPUSH\r\n$5\r\nlist\r\n$1\r\nb\r\n$1\r\nc\r\n$1\r\nd\r\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	buffer, totalRead = readWithDeadline(t, conn, 10)
+
+    expected = respInteger(4)
+    assert.Equal(t, expected, string(buffer[:totalRead]), "Received data should match expected count")
+
+	_, err = conn.Write([]byte("*4\r\n$4\r\nLRANGE\r\n$5\r\nlist\r\n$1\r\n0\r\n$1\r\n3\r\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	buffer, totalRead = readWithDeadline(t, conn, 10)
+
+	expected = respArray([]string{"d", "c", "b", "a"})
     assert.Equal(t, expected, string(buffer[:totalRead]), "Received data should match expected count")
 }
 

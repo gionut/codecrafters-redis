@@ -8,22 +8,14 @@ import (
 	"strings"
 	"strconv"
 	"time"
+	"container/list"
 )
 
 var _ = net.Listen
 var _ = os.Exit
 
-type Entry struct {
-    Value  string
-    Expiry time.Time // zero value means no expiry
-}
-
-func (e Entry) IsExpired() bool {
-    return !e.Expiry.IsZero() && time.Now().After(e.Expiry)
-}
-
 // handleCommand dispatches a parsed command and writes the response to conn.
-func handleCommand(conn net.Conn, cmd string, args []string, store map[string]Entry, list_store map[string][]string) {
+func handleCommand(conn net.Conn, cmd string, args []string, store *Store) {
 	switch cmd {
 		case "PING":
 			conn.Write([]byte("+PONG\r\n"))
@@ -49,7 +41,7 @@ func handleCommand(conn net.Conn, cmd string, args []string, store map[string]En
 				}
 				entry.Expiry = time.Now().Add(time.Duration(ms) * time.Millisecond)
 			}
-			store[key] = entry
+			store.strings[key] = entry
 			conn.Write([]byte("+OK\r\n"))
 		case "GET":
 			if len(args) != 1 {
@@ -57,12 +49,12 @@ func handleCommand(conn net.Conn, cmd string, args []string, store map[string]En
 				return
 			}
 			key := args[0]
-			entry, exists := store[key]
+			entry, exists := store.strings[key]
 			if exists && !entry.IsExpired() {
         		conn.Write([]byte(bulkString(entry.Value)))
     		} else {
         		if exists {
-            		delete(store, key) // lazy expiry cleanup
+            		delete(store.strings, key) // lazy expiry cleanup
         		}
         		conn.Write([]byte(bulkStringNull()))
     		}
@@ -74,9 +66,16 @@ func handleCommand(conn net.Conn, cmd string, args []string, store map[string]En
 			key := args[0]
 			elements := args[1:]
 			
-			list_store[key] = append(list_store[key], elements...)
+			l, exists := store.lists[key]
+			if !exists {
+				l = list.New()
+				store.lists[key] = l
+			}
+			for _, el := range(elements) {
+				l.PushBack(el)
+			}
 			
-			conn.Write([]byte(respInteger(len(list_store[key]))))
+			conn.Write([]byte(respInteger(l.Len())))
 		case "LRANGE":
 			if len(args) != 3 {
 				conn.Write([]byte("-ERR wrong number of arguments for 'lrange' command\r\n"))
@@ -94,13 +93,13 @@ func handleCommand(conn net.Conn, cmd string, args []string, store map[string]En
 				return
 			}
 
-			list, exists := list_store[key]
+			l, exists := store.lists[key]
 			if !exists {
 				conn.Write([]byte(respArray([]string{})))
 				return
 			}
 
-			n := len(list)
+			n := l.Len()
 			if start < 0 {
 				start = max(start+n, 0)
 			}
@@ -114,7 +113,37 @@ func handleCommand(conn net.Conn, cmd string, args []string, store map[string]En
 			}
 
 			stop = min(stop+1, n)
-			conn.Write([]byte(respArray(list[start:stop])))
+			result := []string{}
+
+			i := 0
+			for e := l.Front(); e != nil; e = e.Next() {
+				if i >= stop {
+					break
+				}
+				if i >= start {
+					result = append(result, e.Value.(string))
+				}
+				i++
+			}
+			conn.Write([]byte(respArray(result)))
+		case "LPUSH":
+			if len(args) < 2 {
+				conn.Write([]byte("-ERR wrong number of arguments for 'lpush' command\r\n"))
+				return
+			}
+			key := args[0]
+			elements := args[1:]
+			
+			l, exists := store.lists[key]
+			if !exists {
+				l = list.New()
+				store.lists[key] = l
+			}
+			for _, el := range(elements) {
+				l.PushFront(el)
+			}
+			
+			conn.Write([]byte(respInteger(l.Len())))
 		default:
 			conn.Write([]byte("-ERR unknown command '" + cmd + "'\r\n"))
 	}
@@ -123,8 +152,8 @@ func handleCommand(conn net.Conn, cmd string, args []string, store map[string]En
 func HandleConnection(conn net.Conn) {
 	defer conn.Close()
 	reader := bufio.NewReader(conn)
-	store := make(map[string]Entry)
-	list_store := make(map[string][]string)
+	store := NewStore()
+
 	for {
 		line, err := reader.ReadString('\n')
 		if err != nil {
@@ -149,7 +178,7 @@ func HandleConnection(conn net.Conn) {
 			return // connection is likely corrupted, bail out
 		}
 
-		handleCommand(conn, cmd, args, store, list_store)
+		handleCommand(conn, cmd, args, store)
 	}
 }
 

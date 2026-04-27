@@ -144,6 +144,19 @@ func handleCommand(conn net.Conn, cmd string, args []string, store *Store) {
 			}
 			
 			conn.Write([]byte(respInteger(l.Len())))
+		case "LLEN":
+			if len(args) != 1 {
+				conn.Write([]byte("-ERR wrong number of arguments for 'llist' command\r\n"))
+				return
+			}
+			key := args[0]
+			
+			l, exists := store.lists[key]
+			if exists {
+				conn.Write([]byte(respInteger(l.Len())))
+				return
+			}
+			conn.Write([]byte(respInteger(0)))
 		default:
 			conn.Write([]byte("-ERR unknown command '" + cmd + "'\r\n"))
 	}

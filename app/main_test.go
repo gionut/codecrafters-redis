@@ -396,15 +396,15 @@ func TestHandleListRangeStartExceedingStop(t *testing.T) {
     assert.Equal(t, expected, string(buffer[:totalRead]), "Received data should match expected count")
 }
 
-func TestHandleLlist(t *testing.T) {
+func TestHandleLlen(t *testing.T) {
 	conn, cleanup := setupTestConnection(t)
 	defer cleanup()
 	
-	_, err := conn.Write([]byte("*2\r\n$5\r\nLLIST\r\n$5\r\nlist"))
+	_, err := conn.Write([]byte("*2\r\n$4\r\nLLEN\r\n$5\r\nlist\r\n"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	buffer, totalRead := readWithDeadline(t, conn, 10)
+	buffer, totalRead := readWithDeadline(t, conn, 20)
 
     expected := respInteger(0)
     assert.Equal(t, expected, string(buffer[:totalRead]), "Received data should match expected count")
@@ -418,7 +418,7 @@ func TestHandleLlist(t *testing.T) {
     expected = respInteger(2)
     assert.Equal(t, expected, string(buffer[:totalRead]), "Received data should match expected count")
 
-	_, err = conn.Write([]byte("*2\r\n$5\r\nLLIST\r\n$5\r\nlist"))
+	_, err = conn.Write([]byte("*2\r\n$5\r\nLLEN\r\n$5\r\nlist\r\n"))
 	if err != nil {
 		t.Fatal(err)
 	}

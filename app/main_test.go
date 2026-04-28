@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func setupTestServer(t *testing.T) (string, func()) {
+func setupTestServerWithStore(t *testing.T, store *Store) (string, func()) {
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatal(err)
@@ -18,26 +18,26 @@ func setupTestServer(t *testing.T) (string, func()) {
 	go func() {
 		conn, err := ln.Accept()
 		if err == nil {
-			HandleConnection(conn)
+			HandleConnectionWithStore(conn, store)
 		}
 	}()
-	
+
 	cleanup := func() {
-        ln.Close()
-    }
-    
-    return ln.Addr().String(), cleanup
-	
+		ln.Close()
+	}
+
+	return ln.Addr().String(), cleanup
+
 }
 
-func setupTestConnection(t * testing.T) (net.Conn, func()) {
-	addr, ln_cleanup := setupTestServer(t)
+func setupTestConnectionWithStore(t *testing.T, store *Store) (net.Conn, func()) {
+	addr, ln_cleanup := setupTestServerWithStore(t, store)
 
-    conn, err := net.Dial("tcp", addr)
-    if err != nil {
+	conn, err := net.Dial("tcp", addr)
+	if err != nil {
 		t.Fatal(err)
 	}
-    cleanup := func() {
+	cleanup := func() {
 		conn.Close()
 		ln_cleanup()
 	}
@@ -68,7 +68,7 @@ func readWithDeadline(t *testing.T, conn net.Conn, timeout int) ([]byte, int) {
 }
 
 func TestHandleConnection(t *testing.T) {
-	conn, cleanup := setupTestConnection(t)
+	conn, cleanup := setupTestConnectionWithStore(t, NewStore())
 	defer cleanup()
 
 	conn.Write([]byte("*1\r\n$4\r\nPING\r\n"))
@@ -86,62 +86,62 @@ func TestHandleConnection(t *testing.T) {
 }
 
 func TestHandleMultiplePings(t *testing.T) {
-    conn, cleanup := setupTestConnection(t)
+	conn, cleanup := setupTestConnectionWithStore(t, NewStore())
 	defer cleanup()
 
-    for i := 0; i < 3; i++ {
-        _, err := conn.Write([]byte("*1\r\n$4\r\nPING\r\n"))
-        if err != nil {
+	for i := 0; i < 3; i++ {
+		_, err := conn.Write([]byte("*1\r\n$4\r\nPING\r\n"))
+		if err != nil {
 			t.Fatal(err)
 		}
-    }
+	}
 
-    buffer, totalRead := readWithDeadline(t, conn, 10)
+	buffer, totalRead := readWithDeadline(t, conn, 10)
 
-    expected := "+PONG\r\n+PONG\r\n+PONG\r\n"
-    assert.Equal(t, expected, string(buffer[:totalRead]), "Received data should match expected count")
+	expected := "+PONG\r\n+PONG\r\n+PONG\r\n"
+	assert.Equal(t, expected, string(buffer[:totalRead]), "Received data should match expected count")
 }
 
 func TestHandleEcho(t *testing.T) {
-	conn, cleanup := setupTestConnection(t)
+	conn, cleanup := setupTestConnectionWithStore(t, NewStore())
 	defer cleanup()
-	
+
 	_, err := conn.Write([]byte("*2\r\n$4\r\nECHO\r\n$3\r\nhey\r\n"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	buffer, totalRead := readWithDeadline(t, conn, 10)
 
-    expected := "$3\r\nhey\r\n"
-    assert.Equal(t, expected, string(buffer[:totalRead]), "Received data should match expected count")
+	expected := "$3\r\nhey\r\n"
+	assert.Equal(t, expected, string(buffer[:totalRead]), "Received data should match expected count")
 }
 
 func TestHandleSet(t *testing.T) {
-	conn, cleanup := setupTestConnection(t)
+	conn, cleanup := setupTestConnectionWithStore(t, NewStore())
 	defer cleanup()
-	
+
 	_, err := conn.Write([]byte("*3\r\n$3\r\nSET\r\n$3\r\nfoo\r\n$3\r\nbar\r\n"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	buffer, totalRead := readWithDeadline(t, conn, 10)
 
-    expected := "+OK\r\n"
-    assert.Equal(t, expected, string(buffer[:totalRead]), "Received data should match expected count")
+	expected := "+OK\r\n"
+	assert.Equal(t, expected, string(buffer[:totalRead]), "Received data should match expected count")
 }
 
 func TestHandleGetSet(t *testing.T) {
-	conn, cleanup := setupTestConnection(t)
+	conn, cleanup := setupTestConnectionWithStore(t, NewStore())
 	defer cleanup()
-	
+
 	_, err := conn.Write([]byte("*3\r\n$3\r\nSET\r\n$3\r\nfoo\r\n$3\r\nbar\r\n"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	buffer, totalRead := readWithDeadline(t, conn, 10)
 
-    expected := "+OK\r\n"
-    assert.Equal(t, expected, string(buffer[:totalRead]), "Received data should match expected count")
+	expected := "+OK\r\n"
+	assert.Equal(t, expected, string(buffer[:totalRead]), "Received data should match expected count")
 
 	_, err = conn.Write([]byte("*2\r\n$3\r\nGET\r\n$3\r\nfoo\r\n"))
 	if err != nil {
@@ -149,35 +149,35 @@ func TestHandleGetSet(t *testing.T) {
 	}
 	buffer, totalRead = readWithDeadline(t, conn, 10)
 	expected = bulkString("bar")
-    assert.Equal(t, expected, string(buffer[:totalRead]), "Received data should match expected count")
+	assert.Equal(t, expected, string(buffer[:totalRead]), "Received data should match expected count")
 }
 
 func TestHandleGetNull(t *testing.T) {
-	conn, cleanup := setupTestConnection(t)
+	conn, cleanup := setupTestConnectionWithStore(t, NewStore())
 	defer cleanup()
-	
+
 	_, err := conn.Write([]byte("*2\r\n$3\r\nGET\r\n$3\r\nfoo\r\n"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	buffer, totalRead := readWithDeadline(t, conn, 10)
 
-    expected := bulkStringNull()
-    assert.Equal(t, expected, string(buffer[:totalRead]), "Received data should match expected count")
+	expected := bulkStringNull()
+	assert.Equal(t, expected, string(buffer[:totalRead]), "Received data should match expected count")
 }
 
 func TestHandleGetSetExpiry(t *testing.T) {
-	conn, cleanup := setupTestConnection(t)
+	conn, cleanup := setupTestConnectionWithStore(t, NewStore())
 	defer cleanup()
-	
+
 	_, err := conn.Write([]byte("*5\r\n$3\r\nSET\r\n$3\r\nfoo\r\n$3\r\nbar\r\n$2\r\nPX\r\n$3\r\n100\r\n"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	buffer, totalRead := readWithDeadline(t, conn, 10)
 
-    expected := "+OK\r\n"
-    assert.Equal(t, expected, string(buffer[:totalRead]), "Received data should match expected count")
+	expected := "+OK\r\n"
+	assert.Equal(t, expected, string(buffer[:totalRead]), "Received data should match expected count")
 
 	_, err = conn.Write([]byte("*2\r\n$3\r\nGET\r\n$3\r\nfoo\r\n"))
 	if err != nil {
@@ -185,246 +185,201 @@ func TestHandleGetSetExpiry(t *testing.T) {
 	}
 	buffer, totalRead = readWithDeadline(t, conn, 10)
 	expected = bulkString("bar")
-    assert.Equal(t, expected, string(buffer[:totalRead]), "Received data should match expected count")
+	assert.Equal(t, expected, string(buffer[:totalRead]), "Received data should match expected count")
 
-	time.Sleep(200*time.Millisecond)
+	time.Sleep(200 * time.Millisecond)
 	_, err = conn.Write([]byte("*2\r\n$3\r\nGET\r\n$3\r\nfoo\r\n"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	buffer, totalRead = readWithDeadline(t, conn, 10)
 	expected = bulkStringNull()
-    assert.Equal(t, expected, string(buffer[:totalRead]), "Received data should match expected count")
+	assert.Equal(t, expected, string(buffer[:totalRead]), "Received data should match expected count")
 }
 
 func TestHandleRpushListCreation(t *testing.T) {
-	conn, cleanup := setupTestConnection(t)
+	conn, cleanup := setupTestConnectionWithStore(t, NewStore())
 	defer cleanup()
-	
+
 	_, err := conn.Write([]byte("*3\r\n$4\r\nRPUSH\r\n$5\r\nlist\r\n$3\r\nfoo\r\n"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	buffer, totalRead := readWithDeadline(t, conn, 10)
 
-    expected := respInteger(1)
-    assert.Equal(t, expected, string(buffer[:totalRead]), "Received data should match expected count")
+	expected := respInteger(1)
+	assert.Equal(t, expected, string(buffer[:totalRead]), "Received data should match expected count")
 }
 
 func TestHandleLpushListCreation(t *testing.T) {
-	conn, cleanup := setupTestConnection(t)
+	conn, cleanup := setupTestConnectionWithStore(t, NewStore())
 	defer cleanup()
-	
+
 	_, err := conn.Write([]byte("*3\r\n$4\r\nLPUSH\r\n$5\r\nlist\r\n$3\r\nfoo\r\n"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	buffer, totalRead := readWithDeadline(t, conn, 10)
 
-    expected := respInteger(1)
-    assert.Equal(t, expected, string(buffer[:totalRead]), "Received data should match expected count")
+	expected := respInteger(1)
+	assert.Equal(t, expected, string(buffer[:totalRead]), "Received data should match expected count")
 }
 
 func TestHandleRpushListAppend(t *testing.T) {
-	conn, cleanup := setupTestConnection(t)
+	store := StoreWithList("list", []string{"a"})
+	conn, cleanup := setupTestConnectionWithStore(t, store)
 	defer cleanup()
-	
-	_, err := conn.Write([]byte("*3\r\n$4\r\nRPUSH\r\n$5\r\nlist\r\n$1\r\na\r\n"))
+
+	_, err := conn.Write([]byte("*5\r\n$4\r\nRPUSH\r\n$5\r\nlist\r\n$1\r\nb\r\n$1\r\nc\r\n$1\r\nd\r\n"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	buffer, totalRead := readWithDeadline(t, conn, 10)
 
-    expected := respInteger(1)
-    assert.Equal(t, expected, string(buffer[:totalRead]), "Received data should match expected count")
-
-	_, err = conn.Write([]byte("*5\r\n$4\r\nRPUSH\r\n$5\r\nlist\r\n$1\r\nb\r\n$1\r\nc\r\n$1\r\nd\r\n"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	buffer, totalRead = readWithDeadline(t, conn, 10)
-
-    expected = respInteger(4)
-    assert.Equal(t, expected, string(buffer[:totalRead]), "Received data should match expected count")
-
-	_, err = conn.Write([]byte("*4\r\n$4\r\nLRANGE\r\n$5\r\nlist\r\n$1\r\n0\r\n$1\r\n3\r\n"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	buffer, totalRead = readWithDeadline(t, conn, 10)
-
-	expected = respArray([]string{"a", "b", "c", "d"})
-    assert.Equal(t, expected, string(buffer[:totalRead]), "Received data should match expected count")
+	assert.Equal(t, respInteger(4), string(buffer[:totalRead]), "Received data should match expected count")
+	assert.Equal(t, []string{"a", "b", "c", "d"}, store.SliceOfList("list"), "Received data should match expected count")
 }
 
 func TestHandleLpushListAppend(t *testing.T) {
-	conn, cleanup := setupTestConnection(t)
+	store := StoreWithList("list", []string{"a"})
+	conn, cleanup := setupTestConnectionWithStore(t, store)
 	defer cleanup()
-	
-	_, err := conn.Write([]byte("*3\r\n$4\r\nLPUSH\r\n$5\r\nlist\r\n$1\r\na\r\n"))
+
+	_, err := conn.Write([]byte("*5\r\n$4\r\nLPUSH\r\n$5\r\nlist\r\n$1\r\nb\r\n$1\r\nc\r\n$1\r\nd\r\n"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	buffer, totalRead := readWithDeadline(t, conn, 10)
 
-    expected := respInteger(1)
-    assert.Equal(t, expected, string(buffer[:totalRead]), "Received data should match expected count")
-
-	_, err = conn.Write([]byte("*5\r\n$4\r\nLPUSH\r\n$5\r\nlist\r\n$1\r\nb\r\n$1\r\nc\r\n$1\r\nd\r\n"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	buffer, totalRead = readWithDeadline(t, conn, 10)
-
-    expected = respInteger(4)
-    assert.Equal(t, expected, string(buffer[:totalRead]), "Received data should match expected count")
-
-	_, err = conn.Write([]byte("*4\r\n$4\r\nLRANGE\r\n$5\r\nlist\r\n$1\r\n0\r\n$1\r\n3\r\n"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	buffer, totalRead = readWithDeadline(t, conn, 10)
-
-	expected = respArray([]string{"d", "c", "b", "a"})
-    assert.Equal(t, expected, string(buffer[:totalRead]), "Received data should match expected count")
+	assert.Equal(t, respInteger(4), string(buffer[:totalRead]), "Received data should match expected count")
+	assert.Equal(t, []string{"d", "c", "b", "a"}, store.SliceOfList("list"), "Received data should match expected count")
 }
 
 func TestHandleListRangeEmptyList(t *testing.T) {
-	conn, cleanup := setupTestConnection(t)
+	store := StoreWithList("list", []string{})
+	conn, cleanup := setupTestConnectionWithStore(t, store)
 	defer cleanup()
-	
+
 	_, err := conn.Write([]byte("*4\r\n$4\r\nLRANGE\r\n$5\r\nlist\r\n$1\r\n0\r\n$1\r\n1\r\n"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	buffer, totalRead := readWithDeadline(t, conn, 10)
 
-    expected := respArray([]string{})
-    assert.Equal(t, expected, string(buffer[:totalRead]), "Received data should match expected count")
+	assert.Equal(t, respArray([]string{}), string(buffer[:totalRead]), "Received data should match expected count")
 }
 
 func TestHandleListRangeGoodIndices(t *testing.T) {
-	conn, cleanup := setupTestConnection(t)
+	store := StoreWithList("list", []string{"a", "b"})
+	conn, cleanup := setupTestConnectionWithStore(t, store)
 	defer cleanup()
 
-	_, err := conn.Write([]byte("*4\r\n$4\r\nRPUSH\r\n$5\r\nlist\r\n$1\r\na\r\n$1\r\nb\r\n"))
+	_, err := conn.Write([]byte("*4\r\n$4\r\nLRANGE\r\n$5\r\nlist\r\n$1\r\n0\r\n$1\r\n1\r\n"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	buffer, totalRead := readWithDeadline(t, conn, 10)
 
-    expected := respInteger(2)
-    assert.Equal(t, expected, string(buffer[:totalRead]), "Received data should match expected count")
-
-	_, err = conn.Write([]byte("*4\r\n$4\r\nLRANGE\r\n$5\r\nlist\r\n$1\r\n0\r\n$1\r\n1\r\n"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	buffer, totalRead = readWithDeadline(t, conn, 10)
-
-	expected = respArray([]string{"a", "b"})
-    assert.Equal(t, expected, string(buffer[:totalRead]), "Received data should match expected count")
+	assert.Equal(t, respArray([]string{"a", "b"}), string(buffer[:totalRead]), "Received data should match expected count")
 }
 
 func TestHandleListRangeExceedingStop(t *testing.T) {
-	conn, cleanup := setupTestConnection(t)
+	store := StoreWithList("list", []string{"a", "b"})
+	conn, cleanup := setupTestConnectionWithStore(t, store)
 	defer cleanup()
 
-	_, err := conn.Write([]byte("*4\r\n$4\r\nRPUSH\r\n$5\r\nlist\r\n$1\r\na\r\n$1\r\nb\r\n"))
+	_, err := conn.Write([]byte("*4\r\n$4\r\nLRANGE\r\n$5\r\nlist\r\n$1\r\n0\r\n$3\r\n100\r\n"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	buffer, totalRead := readWithDeadline(t, conn, 10)
 
-    expected := respInteger(2)
-    assert.Equal(t, expected, string(buffer[:totalRead]), "Received data should match expected count")
-
-	_, err = conn.Write([]byte("*4\r\n$4\r\nLRANGE\r\n$5\r\nlist\r\n$1\r\n0\r\n$3\r\n100\r\n"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	buffer, totalRead = readWithDeadline(t, conn, 10)
-	
-	expected = respArray([]string{"a", "b"})
-    assert.Equal(t, expected, string(buffer[:totalRead]), "Received data should match expected count")
+	assert.Equal(t, respArray([]string{"a", "b"}), string(buffer[:totalRead]), "Received data should match expected count")
 }
 
 func TestHandleListRangeStartExceedingLength(t *testing.T) {
-	conn, cleanup := setupTestConnection(t)
+	store := StoreWithList("list", []string{"a", "b"})
+	conn, cleanup := setupTestConnectionWithStore(t, store)
 	defer cleanup()
 
-	_, err := conn.Write([]byte("*4\r\n$4\r\nRPUSH\r\n$5\r\nlist\r\n$1\r\na\r\n$1\r\nb\r\n"))
+	_, err := conn.Write([]byte("*4\r\n$4\r\nLRANGE\r\n$5\r\nlist\r\n$1\r\n2\r\n$3\r\n100\r\n"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	buffer, totalRead := readWithDeadline(t, conn, 10)
 
-    expected := respInteger(2)
-    assert.Equal(t, expected, string(buffer[:totalRead]), "Received data should match expected count")
-
-	_, err = conn.Write([]byte("*4\r\n$4\r\nLRANGE\r\n$5\r\nlist\r\n$1\r\n2\r\n$3\r\n100\r\n"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	buffer, totalRead = readWithDeadline(t, conn, 10)
-	
-	expected = respArray([]string{})
-    assert.Equal(t, expected, string(buffer[:totalRead]), "Received data should match expected count")
+	assert.Equal(t, respArray([]string{}), string(buffer[:totalRead]), "Received data should match expected count")
 
 }
 
 func TestHandleListRangeStartExceedingStop(t *testing.T) {
-	conn, cleanup := setupTestConnection(t)
+	store := StoreWithList("list", []string{"a", "b"})
+	conn, cleanup := setupTestConnectionWithStore(t, store)
 	defer cleanup()
-	
-	_, err := conn.Write([]byte("*4\r\n$4\r\nRPUSH\r\n$5\r\nlist\r\n$1\r\na\r\n$1\r\nb\r\n"))
+
+	_, err := conn.Write([]byte("*4\r\n$4\r\nLRANGE\r\n$5\r\nlist\r\n$1\r\n2\r\n$1\r\n1\r\n"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	buffer, totalRead := readWithDeadline(t, conn, 10)
 
-    expected := respInteger(2)
-    assert.Equal(t, expected, string(buffer[:totalRead]), "Received data should match expected count")
-
-	_, err = conn.Write([]byte("*4\r\n$4\r\nLRANGE\r\n$5\r\nlist\r\n$1\r\n2\r\n$1\r\n1\r\n"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	buffer, totalRead = readWithDeadline(t, conn, 10)
-	
-	expected = respArray([]string{})
-    assert.Equal(t, expected, string(buffer[:totalRead]), "Received data should match expected count")
+	assert.Equal(t, respArray([]string{}), string(buffer[:totalRead]), "Received data should match expected count")
 }
 
-func TestHandleLlen(t *testing.T) {
-	conn, cleanup := setupTestConnection(t)
+func TestHandleLlenEmptyList(t *testing.T) {
+	store := StoreWithList("list", []string{})
+	conn, cleanup := setupTestConnectionWithStore(t, store)
 	defer cleanup()
-	
+
 	_, err := conn.Write([]byte("*2\r\n$4\r\nLLEN\r\n$5\r\nlist\r\n"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	buffer, totalRead := readWithDeadline(t, conn, 20)
 
-    expected := respInteger(0)
-    assert.Equal(t, expected, string(buffer[:totalRead]), "Received data should match expected count")
+	assert.Equal(t, respInteger(0), string(buffer[:totalRead]), "Received data should match expected count")
+}
 
-	_, err = conn.Write([]byte("*4\r\n$4\r\nRPUSH\r\n$5\r\nlist\r\n$1\r\na\r\n$1\r\nb\r\n"))
+
+func TestHandleLlen(t *testing.T) {
+	store := StoreWithList("list", []string{"a", "b"})
+	conn, cleanup := setupTestConnectionWithStore(t, store)
+	defer cleanup()
+
+	_, err := conn.Write([]byte("*2\r\n$4\r\nLLEN\r\n$5\r\nlist\r\n"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	buffer, totalRead = readWithDeadline(t, conn, 10)
+	buffer, totalRead := readWithDeadline(t, conn, 20)
 
-    expected = respInteger(2)
-    assert.Equal(t, expected, string(buffer[:totalRead]), "Received data should match expected count")
+	assert.Equal(t, respInteger(2), string(buffer[:totalRead]), "Received data should match expected count")
+}
 
-	_, err = conn.Write([]byte("*2\r\n$5\r\nLLEN\r\n$5\r\nlist\r\n"))
+func TestHandleLpopEmptyList(t *testing.T) {
+	store := StoreWithList("list", []string{})
+	conn, cleanup := setupTestConnectionWithStore(t, store)
+	defer cleanup()
+
+	_, err := conn.Write([]byte("*2\r\n$4\r\nLPOP\r\n$5\r\nlist\r\n"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	buffer, totalRead = readWithDeadline(t, conn, 10)
+	buffer, totalRead := readWithDeadline(t, conn, 20)
 
-    expected = respInteger(2)
-    assert.Equal(t, expected, string(buffer[:totalRead]), "Received data should match expected count")
+	assert.Equal(t, bulkStringNull(), string(buffer[:totalRead]), "Received data should match expected count")
+}
 
+func TestHandleLpopOneElement(t *testing.T) {
+	store := StoreWithList("list", []string{"a", "b"})
+	conn, cleanup := setupTestConnectionWithStore(t, store)
+	defer cleanup()
+
+	_, err := conn.Write([]byte("*2\r\n$4\r\nLPOP\r\n$5\r\nlist\r\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	buffer, totalRead := readWithDeadline(t, conn, 20)
+
+	assert.Equal(t, bulkString("a"), string(buffer[:totalRead]), "Received data should match expected count")
+	assert.Equal(t, store.ListLen("list"), 1, "The list should have only one element now")
 }

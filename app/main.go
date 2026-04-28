@@ -158,20 +158,43 @@ func handleCommand(conn net.Conn, cmd string, args []string, store *Store) {
 			}
 			conn.Write([]byte(respInteger(0)))
 		case "LPOP":
-			if len(args) != 1 {
-				conn.Write([]byte("-ERR wrong number of arguments for 'llist' command\r\n"))
+			if len(args) > 2 {
+				conn.Write([]byte("-ERR wrong number of arguments for 'lpop' command\r\n"))
 				return
 			}
 			key := args[0]
-			
+			cnt := 1
+			var err error
+			if len(args) == 2 {
+				cnt, err = strconv.Atoi(args[1])
+				if err != nil {
+					conn.Write([]byte("-ERR wrong type for 'lpop <count>' argument\r\n"))
+					return
+				}
+			}
+
 			l, exists := store.lists[key]
-			if !exists || l.Front() == nil {
+			if !exists {
 				conn.Write([]byte(bulkStringNull()))
 				return
 			}
 			
-			el := l.Remove(l.Front())
-			conn.Write([]byte(bulkString(el.(string))))
+			result := []string{}
+			for e := l.Front(); e != nil && cnt > 0; {
+				next := e.Next()
+				result = append(result, l.Remove(e).(string))
+				cnt--
+				e = next
+			}
+
+			switch len(result) {
+				case 0:
+					conn.Write([]byte(bulkStringNull()))
+				case 1: 
+					conn.Write([]byte(bulkString(result[0])))
+				default:
+					conn.Write([]byte(respArray(result)))
+			}
 		default:
 			conn.Write([]byte("-ERR unknown command '" + cmd + "'\r\n"))
 	}

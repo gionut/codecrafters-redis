@@ -8,7 +8,6 @@ import (
 	"strings"
 	"strconv"
 	"time"
-	"container/list"
 )
 
 var _ = net.Listen
@@ -64,18 +63,9 @@ func handleCommand(conn net.Conn, cmd string, args []string, store *Store) {
 				return
 			}
 			key := args[0]
-			elements := args[1:]
-			
-			l, exists := store.lists[key]
-			if !exists {
-				l = list.New()
-				store.lists[key] = l
-			}
-			for _, el := range(elements) {
-				l.PushBack(el)
-			}
-			
-			conn.Write([]byte(respInteger(l.Len())))
+			elements := args[1:]			
+			conn.Write([]byte(respInteger(store.PushBack(key, elements))))
+
 		case "LRANGE":
 			if len(args) != 3 {
 				conn.Write([]byte("-ERR wrong number of arguments for 'lrange' command\r\n"))
@@ -93,39 +83,7 @@ func handleCommand(conn net.Conn, cmd string, args []string, store *Store) {
 				return
 			}
 
-			l, exists := store.lists[key]
-			if !exists {
-				conn.Write([]byte(respArray([]string{})))
-				return
-			}
-
-			n := l.Len()
-			if start < 0 {
-				start = max(start+n, 0)
-			}
-			if stop < 0 {
-				stop = stop + n
-			}
-
-			if start > stop || start >= n {
-				conn.Write([]byte(respArray([]string{})))
-				return
-			}
-
-			stop = min(stop+1, n)
-			result := []string{}
-
-			i := 0
-			for e := l.Front(); e != nil; e = e.Next() {
-				if i >= stop {
-					break
-				}
-				if i >= start {
-					result = append(result, e.Value.(string))
-				}
-				i++
-			}
-			conn.Write([]byte(respArray(result)))
+			conn.Write([]byte(respArray(store.SliceOfList(key, start, stop))))
 		case "LPUSH":
 			if len(args) < 2 {
 				conn.Write([]byte("-ERR wrong number of arguments for 'lpush' command\r\n"))
@@ -133,30 +91,16 @@ func handleCommand(conn net.Conn, cmd string, args []string, store *Store) {
 			}
 			key := args[0]
 			elements := args[1:]
-			
-			l, exists := store.lists[key]
-			if !exists {
-				l = list.New()
-				store.lists[key] = l
-			}
-			for _, el := range(elements) {
-				l.PushFront(el)
-			}
-			
-			conn.Write([]byte(respInteger(l.Len())))
+
+			conn.Write([]byte(respInteger(store.PushFront(key, elements))))
 		case "LLEN":
 			if len(args) != 1 {
 				conn.Write([]byte("-ERR wrong number of arguments for 'llist' command\r\n"))
 				return
 			}
 			key := args[0]
-			
-			l, exists := store.lists[key]
-			if exists {
-				conn.Write([]byte(respInteger(l.Len())))
-				return
-			}
-			conn.Write([]byte(respInteger(0)))
+			conn.Write([]byte(respInteger(store.ListLen(key))))
+
 		case "LPOP":
 			if len(args) > 2 {
 				conn.Write([]byte("-ERR wrong number of arguments for 'lpop' command\r\n"))
@@ -173,20 +117,7 @@ func handleCommand(conn net.Conn, cmd string, args []string, store *Store) {
 				}
 			}
 
-			l, exists := store.lists[key]
-			if !exists {
-				conn.Write([]byte(bulkStringNull()))
-				return
-			}
-			
-			result := []string{}
-			for e := l.Front(); e != nil && cnt > 0; {
-				next := e.Next()
-				result = append(result, l.Remove(e).(string))
-				cnt--
-				e = next
-			}
-
+			result := store.Lpop(key, cnt)
 			switch len(result) {
 				case 0:
 					conn.Write([]byte(bulkStringNull()))
@@ -194,6 +125,23 @@ func handleCommand(conn net.Conn, cmd string, args []string, store *Store) {
 					conn.Write([]byte(bulkString(result[0])))
 				default:
 					conn.Write([]byte(respArray(result)))
+			}
+		case "BLPOP":
+			if len(args) != 2 {
+				conn.Write([]byte("-ERR wrong number of arguments for 'blpop' command\r\n"))
+				return
+			}
+			key := args[0]
+			timeout, err := strconv.Atoi(args[1])
+			if err != nil || timeout != 0 {
+				// For now, client will always call blpop with timeout 0
+				conn.Write([]byte("-ERR wrong type for 'blpop <timeout>' argument\r\n"))
+				return
+			}
+			
+			val, popped := store.LPopOrRegister(key, Request{conn: conn, timeout: timeout})
+			if popped {
+				conn.Write([]byte(fmt.Sprintf("*2\r\n$%d\r\n%s\r\n$%d\r\n%s\r\n", len(key), key, len(val), val)))
 			}
 		default:
 			conn.Write([]byte("-ERR unknown command '" + cmd + "'\r\n"))
@@ -232,13 +180,10 @@ func HandleConnectionWithStore(conn net.Conn, store *Store) {
 	}
 }
 
-func HandleConnection(conn net.Conn) {
-	HandleConnectionWithStore(conn, NewStore())
-}
-
 func main() {
-	
 	l, err := net.Listen("tcp", "0.0.0.0:6379")
+	store := NewStore()
+
 	if err != nil {
 		fmt.Println("Failed to bind to port 6379")
 		os.Exit(1)
@@ -251,6 +196,6 @@ func main() {
 			fmt.Println("Error accepting connection: ", err.Error())
 			continue
 		}
-		go HandleConnection(conn)
+		go HandleConnectionWithStore(conn, store)
 	}
 }
